@@ -65,6 +65,8 @@ class SetupData(object):
 def read_qr(input_path: str) -> str:
   img = Image.open(input_path)
   decoded_objects = decode(img)
+  if len(decoded_objects) == 0:
+    raise RuntimeError('Failed to parse QR code!')
   return decoded_objects[0].data.decode('utf-8')
 
 
