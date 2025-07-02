@@ -41,6 +41,9 @@ Setup requires a photo of the QR code on the back of the device.  The device
 will typically only beacon for setup frequently right after it boots, so if
 setup times out, try rebooting the device and running setup again.
 
+Note that chip-tool stores configurations in a user-specific directory, so any
+automation should use the same user as the setup process.
+
 
 ## Factory Reset
 
