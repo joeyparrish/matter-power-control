@@ -113,6 +113,9 @@ def setup_command(args):
     setup_payload = args.qr_text
   else:
     setup_payload = read_qr(args.qr)
+    print('Parsed QR text:', setup_payload)
+
+  # Parse the QR text to extract setup metadata for the device.
   setup_data = parse_setup_payload(setup_payload)
 
   # Use chip-tool to pair with the device and put it on the WiFi.
