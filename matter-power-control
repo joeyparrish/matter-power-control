@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+#
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Set up and control Matter power strips.
+
+See "matter-power-control --help" for commands, and
+"matter-power-control command --help" for details on each command.
+"""
+
+
+import argparse
+import re
+import subprocess
+import sys
+
+from pyzbar.pyzbar import decode  # type: ignore
+from PIL import Image
+
+
+# Examples:
+# [1751413876.645] [149047:149047] [SPL] Long discriminator:  1234   (0x4d2)
+# [1751413876.645] [149047:149047] [SPL] Passcode:            12345678
+FIELD_MATCH = re.compile(r'\[.*?\] \[.*?\] \[.*?\] (.*?): +([^ \x1b]+)')
+DISCRIMINIATOR_FIELD = 'Long discriminator'
+PASSCODE_FIELD = 'Passcode'
+
+
+THIS_MODULE = sys.modules[__name__]
+
+
+# Stores setup data for a Matter power strip.
+class SetupData(object):
+  # A built-in identifier for an individual device.
+  discriminator: int
+  # A passcode for pairing the device and changing its settings.
+  passcode: int
+
+  def __init__(self):
+    self.discriminator = None
+    self.passcode = None
+
+  def valid(self) -> bool:
+    return self.discriminator is not None and self.passcode is not None
+
+  def __repr__(self) -> str:
+    return 'Discriminator: {}, Passcode: {}'.format(
+        self.discriminator, self.passcode)
+
+
+# Parse a QR code image, like the ones used for Matter setup.
+def read_qr(input_path: str) -> str:
+  img = Image.open(input_path)
+  decoded_objects = decode(img)
+  return decoded_objects[0].data.decode('utf-8')
+
+
+# Parse the Matter setup payload, which was encoded in the QR code.
+def parse_setup_payload(setup_payload: str) -> SetupData:
+  proc = subprocess.run([
+    'chip-tool',
+    'payload',
+    'parse-setup-payload',
+    setup_payload,
+  ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE)
+
+  output = proc.stdout.decode('utf-8')
+
+  if proc.returncode:
+    print(output)
+    raise RuntimeError('Setup data QR code not valid.')
+
+  # Extract the discriminator and passcode from the output of chip-tool.
+  lines = output.split('\n')
+  setup_data = SetupData()
+  for line in lines:
+    match = FIELD_MATCH.search(line)
+    if match:
+      field = match.group(1)
+      value = match.group(2)
+      if field == DISCRIMINIATOR_FIELD:
+        setup_data.discriminator = int(value)
+      elif field == PASSCODE_FIELD:
+        setup_data.passcode = int(value)
+
+  if not setup_data.valid():
+    print(output)
+    raise RuntimeError('Could not find expected output from parser.')
+
+  return setup_data
+
+
+def setup_command(args):
+  """Set up a Matter power strip using a QR.  Power cycle right before this."""
+
+  # Extract setup data from the QR code.
+  setup_payload = read_qr(args.qr)
+  setup_data = parse_setup_payload(setup_payload)
+
+  # Use chip-tool to pair with the device and put it on the WiFi.
+  proc = subprocess.run([
+    'chip-tool',
+    'pairing',
+    'ble-wifi',
+    args.id,
+    args.ssid,
+    args.password,
+    str(setup_data.passcode),
+    str(setup_data.discriminator),
+    '--bypass-attestation-verifier', 'true',
+  ])
+
+  if proc.returncode:
+    raise RuntimeError('Setup process failed. Try restarting the device first.')
+
+
+def power_command(args):
+  """Turn an outlet on or off in a Matter power strip."""
+
+  # Use chip-tool to turn an outlet on or off.
+  proc = subprocess.run([
+    'chip-tool',
+    'onoff',
+    args.on_or_off,
+    args.id,
+    str(args.outlet),
+  ])
+
+  if proc.returncode:
+    raise RuntimeError('Failed to turn power {}.'.format(args.on_or_off))
+
+
+def first_line_docs(thing) -> str:
+  return thing.__doc__.strip().split('\n')[0]
+
+
+def main():
+  parser = argparse.ArgumentParser(
+      description=first_line_docs(THIS_MODULE))
+  subparsers = parser.add_subparsers(
+      title='subcommands', dest='command', required=True)
+
+  # Set up a new device
+  setup_parser = subparsers.add_parser('setup',
+      description=first_line_docs(setup_command))
+  setup_parser.set_defaults(command_func=setup_command)
+  setup_parser.add_argument('--qr', required=True,
+      help='Matter QR code image for setup')
+  setup_parser.add_argument('--id', required=True,
+      help='Chosen Matter device ID (decimal or 0xHEX)')
+  setup_parser.add_argument('--ssid', required=True,
+      help='WiFi SSID')
+  setup_parser.add_argument('--password', required=True,
+      help='WiFi password')
+
+  # Turn power on or off
+  power_parser = subparsers.add_parser('power',
+      description=first_line_docs(power_command))
+  power_parser.set_defaults(command_func=power_command)
+  power_parser.add_argument('--id', required=True,
+      help='Existing Matter device ID (decimal or 0xHEX)')
+  power_parser.add_argument('--outlet', required=True, type=int,
+      help='Power strip outlet number (decimal)')
+  on_or_off = power_parser.add_mutually_exclusive_group(required=True)
+  on_or_off.add_argument('--on', dest='on_or_off',
+      action='store_const', const='on',
+      help='Turn the outlet on')
+  on_or_off.add_argument('--off', dest='on_or_off',
+      action='store_const', const='off',
+      help='Turn the outlet off')
+
+  args = parser.parse_args()
+  args.command_func(args)
+
+
+if __name__ == '__main__':
+  main()
