@@ -6,14 +6,26 @@ setup and control of Matter power strips.
 [chip-tool]: https://project-chip.github.io/connectedhomeip-doc/development_controllers/chip-tool/chip_tool_guide.html
 
 
-## Installation
+## Requirements
+
+Requires python3, a bluetooth adapter, and chip-tool.
+
+Only tested on Ubuntu Linux, but will probably run elsewhere.
+
+
+## Installation (Ubuntu)
 
 ```
-sudo apt install snap zbar-tools
+sudo apt install bluez snap zbar-tools
 sudo snap install chip-tool
+
+sudo systemctl enable bluetooth
+sudo systemctl start bluetooth
+
 git clone https://github.com/joeyparrish/matter-power-control
 cd matter-power-control
 python3 -m pip install -r requirements.txt
+
 sudo cp matter-power-control /usr/local/bin/
 ```
 
