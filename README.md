@@ -16,7 +16,7 @@ Only tested on Ubuntu Linux, but will probably run elsewhere.
 ## Installation (Ubuntu)
 
 ```
-sudo apt install bluez snap zbar-tools
+sudo apt install bluez snap
 sudo snap install chip-tool
 
 sudo systemctl enable bluetooth
@@ -24,7 +24,7 @@ sudo systemctl start bluetooth
 
 git clone https://github.com/joeyparrish/matter-power-control
 cd matter-power-control
-python3 -m pip install -r requirements.txt
+sudo python3 -m pip install -r requirements.txt
 
 sudo cp matter-power-control /usr/local/bin/
 ```

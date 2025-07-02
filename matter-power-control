@@ -27,8 +27,7 @@ import re
 import subprocess
 import sys
 
-from pyzbar.pyzbar import decode  # type: ignore
-from PIL import Image
+import cv2
 
 
 # Examples:
@@ -38,7 +37,7 @@ FIELD_MATCH = re.compile(r'\[.*?\] \[.*?\] \[.*?\] (.*?): +([^ \x1b]+)')
 DISCRIMINIATOR_FIELD = 'Long discriminator'
 PASSCODE_FIELD = 'Passcode'
 
-
+# This module itself, passed to first_line_docs for argparse.
 THIS_MODULE = sys.modules[__name__]
 
 
@@ -63,11 +62,13 @@ class SetupData(object):
 
 # Parse a QR code image, like the ones used for Matter setup.
 def read_qr(input_path: str) -> str:
-  img = Image.open(input_path)
-  decoded_objects = decode(img)
-  if len(decoded_objects) == 0:
+  image = cv2.imread(input_path)
+  decoder = cv2.QRCodeDetector()
+  retval, decoded_info, _, _ = decoder.detectAndDecodeMulti(image)
+  if not retval:
     raise RuntimeError('Failed to parse QR code!')
-  return decoded_objects[0].data.decode('utf-8')
+
+  return decoded_info[0]
 
 
 # Parse the Matter setup payload, which was encoded in the QR code.
@@ -105,18 +106,21 @@ def parse_setup_payload(setup_payload: str) -> SetupData:
   return setup_data
 
 
-def setup_command(args):
-  """Set up a Matter power strip using a QR.  Power cycle right before this."""
-
+def read_and_parse_qr(args) -> SetupData:
   # Extract setup data from the QR code.
   if args.qr_text:
     setup_payload = args.qr_text
-  else:
-    setup_payload = read_qr(args.qr)
-    print('Parsed QR text:', setup_payload)
+    return parse_setup_payload(setup_payload)
 
-  # Parse the QR text to extract setup metadata for the device.
-  setup_data = parse_setup_payload(setup_payload)
+  setup_payload = read_qr(args.qr)
+  print('Parsed QR text:', setup_payload)
+  return parse_setup_payload(setup_payload)
+
+
+def setup_command(args):
+  """Set up a Matter power strip using a QR.  Power cycle right before this."""
+
+  setup_data = read_and_parse_qr(args)
 
   # Use chip-tool to pair with the device and put it on the WiFi.
   proc = subprocess.run([
