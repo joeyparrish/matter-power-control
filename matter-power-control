@@ -109,7 +109,10 @@ def setup_command(args):
   """Set up a Matter power strip using a QR.  Power cycle right before this."""
 
   # Extract setup data from the QR code.
-  setup_payload = read_qr(args.qr)
+  if args.qr_text:
+    setup_payload = args.qr_text
+  else:
+    setup_payload = read_qr(args.qr)
   setup_data = parse_setup_payload(setup_payload)
 
   # Use chip-tool to pair with the device and put it on the WiFi.
@@ -159,14 +162,18 @@ def main():
   setup_parser = subparsers.add_parser('setup',
       description=first_line_docs(setup_command))
   setup_parser.set_defaults(command_func=setup_command)
-  setup_parser.add_argument('--qr', required=True,
-      help='Matter QR code image for setup')
   setup_parser.add_argument('--id', required=True,
       help='Chosen Matter device ID (decimal or 0xHEX)')
   setup_parser.add_argument('--ssid', required=True,
       help='WiFi SSID')
   setup_parser.add_argument('--password', required=True,
       help='WiFi password')
+
+  qr_image_or_text = setup_parser.add_mutually_exclusive_group(required=True)
+  qr_image_or_text.add_argument('--qr',
+      help='Matter QR code image for setup')
+  qr_image_or_text.add_argument('--qr-text',
+      help='(Alternative) Pre-parsed Matter QR code text (MT:...)')
 
   # Turn power on or off
   power_parser = subparsers.add_parser('power',
@@ -176,6 +183,7 @@ def main():
       help='Existing Matter device ID (decimal or 0xHEX)')
   power_parser.add_argument('--outlet', required=True, type=int,
       help='Power strip outlet number (decimal)')
+
   on_or_off = power_parser.add_mutually_exclusive_group(required=True)
   on_or_off.add_argument('--on', dest='on_or_off',
       action='store_const', const='on',
