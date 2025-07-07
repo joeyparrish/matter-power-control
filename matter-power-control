@@ -26,6 +26,7 @@ import argparse
 import re
 import subprocess
 import sys
+import time
 
 import cv2
 
@@ -139,20 +140,29 @@ def setup_command(args):
     raise RuntimeError('Setup process failed. Try restarting the device first.')
 
 
+def change_power(device_id, outlet, on_or_off):
+  """Change the state of an outlet and throw on failure."""
+
+  subprocess.check_call([
+    'chip-tool',
+    'onoff',
+    on_or_off,
+    device_id,
+    str(outlet),
+  ])
+
 def power_command(args):
   """Turn an outlet on or off in a Matter power strip."""
 
-  # Use chip-tool to turn an outlet on or off.
-  proc = subprocess.run([
-    'chip-tool',
-    'onoff',
-    args.on_or_off,
-    args.id,
-    str(args.outlet),
-  ])
-
-  if proc.returncode:
-    raise RuntimeError('Failed to turn power {}.'.format(args.on_or_off))
+  try:
+    if args.on_or_off == 'cycle':
+      change_power(args.id, args.outlet, 'off')
+      time.sleep(args.cycle_delay)
+      change_power(args.id, args.outlet, 'on')
+    else:
+      change_power(args.id, args.outlet, args.on_or_off)
+  except:
+    raise RuntimeError('Failed to power {}.'.format(args.on_or_off))
 
 
 def first_line_docs(thing) -> str:
@@ -198,6 +208,12 @@ def main():
   on_or_off.add_argument('--off', dest='on_or_off',
       action='store_const', const='off',
       help='Turn the outlet off')
+  on_or_off.add_argument('--cycle', dest='on_or_off',
+      action='store_const', const='cycle',
+      help='Turn the outlet off and then on again')
+
+  power_parser.add_argument('--cycle_delay', type=float, default=2.0,
+      help='Delay in seconds between off and on in power cycle (default 2.0)')
 
   args = parser.parse_args()
   args.command_func(args)
