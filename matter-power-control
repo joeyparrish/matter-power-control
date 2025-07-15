@@ -23,12 +23,20 @@ See "matter-power-control --help" for commands, and
 
 
 import argparse
+import json
+import os
 import re
 import subprocess
 import sys
 import time
 
 import cv2
+
+
+DEFAULT_CONFIG_PATH = os.path.join(
+    os.environ.get('HOME', '/'),
+    '.config',
+    'matter-power-control.json')
 
 
 # Examples:
@@ -154,13 +162,22 @@ def change_power(device_id, outlet, on_or_off):
 def power_command(args):
   """Turn an outlet on or off in a Matter power strip."""
 
+  if args.label:
+    with open(args.config, 'r') as f:
+      config = json.load(f)
+    value = config[args.label]
+    id, outlet = value.split(':')
+  else:
+    id = args.id
+    outlet = args.outlet
+
   try:
     if args.on_or_off == 'cycle':
-      change_power(args.id, args.outlet, 'off')
+      change_power(id, outlet, 'off')
       time.sleep(args.cycle_delay)
-      change_power(args.id, args.outlet, 'on')
+      change_power(id, outlet, 'on')
     else:
-      change_power(args.id, args.outlet, args.on_or_off)
+      change_power(id, outlet, args.on_or_off)
   except:
     raise RuntimeError('Failed to power {}.'.format(args.on_or_off))
 
@@ -174,6 +191,7 @@ def main():
       description=first_line_docs(THIS_MODULE))
   subparsers = parser.add_subparsers(
       title='subcommands', dest='command', required=True)
+
 
   # Set up a new device
   setup_parser = subparsers.add_parser('setup',
@@ -192,28 +210,48 @@ def main():
   qr_image_or_text.add_argument('--qr-text',
       help='(Alternative) Pre-parsed Matter QR code text (MT:...)')
 
-  # Turn power on or off
-  power_parser = subparsers.add_parser('power',
-      description=first_line_docs(power_command))
-  power_parser.set_defaults(command_func=power_command)
-  power_parser.add_argument('--id', required=True,
+
+  # Turn power on or off (by ID)
+  power_by_id_parser = subparsers.add_parser('power-by-id',
+      description=first_line_docs(power_command) + ' (by ID)')
+  power_by_id_parser.set_defaults(command_func=power_command, label=None)
+
+  power_by_id_parser.add_argument('--id', required=True,
       help='Existing Matter device ID (decimal or 0xHEX)')
-  power_parser.add_argument('--outlet', required=True, type=int,
+  power_by_id_parser.add_argument('--outlet', required=True, type=int,
       help='Power strip outlet number (decimal)')
 
-  on_or_off = power_parser.add_mutually_exclusive_group(required=True)
-  on_or_off.add_argument('--on', dest='on_or_off',
-      action='store_const', const='on',
-      help='Turn the outlet on')
-  on_or_off.add_argument('--off', dest='on_or_off',
-      action='store_const', const='off',
-      help='Turn the outlet off')
-  on_or_off.add_argument('--cycle', dest='on_or_off',
-      action='store_const', const='cycle',
-      help='Turn the outlet off and then on again')
 
-  power_parser.add_argument('--cycle_delay', type=float, default=2.0,
-      help='Delay in seconds between off and on in power cycle (default 2.0)')
+  # Turn power on or off (by label)
+  power_by_label_parser = subparsers.add_parser('power',
+      description=first_line_docs(power_command) + ' (by label)')
+  power_by_label_parser.set_defaults(command_func=power_command)
+
+  power_by_label_parser.add_argument('--config',
+      default=DEFAULT_CONFIG_PATH,
+      help='A path to a JSON file mapping label to id:outlet')
+  power_by_label_parser.add_argument('--label', required=True,
+      help='A label mapping to a device id and outlet')
+
+
+  def add_power_arguments(power_parser):
+    on_or_off = power_parser.add_mutually_exclusive_group(required=True)
+    on_or_off.add_argument('--on', dest='on_or_off',
+        action='store_const', const='on',
+        help='Turn the outlet on')
+    on_or_off.add_argument('--off', dest='on_or_off',
+        action='store_const', const='off',
+        help='Turn the outlet off')
+    on_or_off.add_argument('--cycle', dest='on_or_off',
+        action='store_const', const='cycle',
+        help='Turn the outlet off and then on again')
+
+    power_parser.add_argument('--cycle_delay', type=float, default=2.0,
+        help='Delay in seconds between off and on in power cycle (default 2.0)')
+
+  add_power_arguments(power_by_id_parser)
+  add_power_arguments(power_by_label_parser)
+
 
   args = parser.parse_args()
   args.command_func(args)
